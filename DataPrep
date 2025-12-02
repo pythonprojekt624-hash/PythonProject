@@ -1,0 +1,61 @@
+#DATA PREPARATION DLA DATASET MATEMATYKI
+
+import pandas as pd
+import numpy as np
+import seaborn as sns
+import matplotlib.pyplot as plt
+from sklearn.linear_model import LinearRegression
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import OrdinalEncoder
+
+plt.figure(figsize=(10, 8))
+data = pd.read_csv('/content/drive/MyDrive/Colab Notebooks/student-mat.csv', sep=';')
+
+# Usunięcie kolumn
+data = data.drop(columns=['Mjob', 'Fjob', 'school', 'reason'])
+
+# Zamiana yes/no na 1/0 + bezpieczna konwersja typów
+for col in data.columns:
+    data[col] = data[col].replace({'yes': 1, 'no': 0})
+    data[col] = data[col].infer_objects(copy=False)  # zgodnie z przyszłym zachowaniem pandas
+
+    # Zamiana GT3 → 1 i LE3 → 0
+data['famsize'] = data['famsize'].replace({'GT3': 1, 'LE3': 0})
+data['famsize'] = data['famsize'].infer_objects(copy=False)
+
+# Zamiana płci: F → 1, M → 0
+data['sex'] = data['sex'].replace({'F': 1, 'M': 0})
+data['sex'] = data['sex'].infer_objects(copy=False)
+
+# Zamiana Pstatus: T → 1, A → 0
+data['Pstatus'] = data['Pstatus'].replace({'T': 1, 'A': 0})
+data['Pstatus'] = data['Pstatus'].infer_objects(copy=False)
+
+# Zamiana guardian: mother/father → 1, other → 0
+data['guardian'] = data['guardian'].replace({'mother': 1, 'father': 1, 'other': 0})
+data['guardian'] = data['guardian'].infer_objects(copy=False)
+
+if 'Medu' in data.columns and 'Fedu' in data.columns:
+    # Tworzymy nową kolumnę Pedu jako sumę Medu i Fedu
+    data['Pedu'] = data['Medu'] + data['Fedu']
+
+    # Usuwamy stare kolumny
+    data = data.drop(columns=['Medu', 'Fedu'])
+
+ #Usuń spacje z nazw kolumn
+data.columns = data.columns.str.strip()
+
+# Inicjalizacja OrdinalEncoder
+encoder = OrdinalEncoder(categories=[['R', 'U']])  # R -> 0, U -> 1
+
+# Zamiana kolumny address
+data['address'] = encoder.fit_transform(data[['address']])
+
+data.to_csv(
+    '/content/drive/MyDrive/Colab Notebooks/student-mat-clean.csv',
+    sep=';',
+    encoding='utf-8-sig',
+    index=False
+)
+
+data.head()
