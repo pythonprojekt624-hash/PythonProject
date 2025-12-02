@@ -1,0 +1,203 @@
+############### SMOTE – Version I
+import pandas as pd
+import numpy as np
+from sklearn.model_selection import train_test_split, GridSearchCV
+from sklearn.preprocessing import StandardScaler
+from sklearn.neural_network import MLPClassifier
+from sklearn.linear_model import LogisticRegression
+from sklearn.svm import SVC
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import (
+    classification_report, accuracy_score, confusion_matrix,
+    make_scorer, f1_score, ConfusionMatrixDisplay
+)
+from imblearn.over_sampling import SMOTE
+import matplotlib.pyplot as plt
+
+# =======================================================================
+# GLOBAL SETTINGS
+# =======================================================================
+
+RANDOM_STATE = 42
+SCORER = make_scorer(f1_score, pos_label=0)   # optimize F1 of the minority class (0)
+
+TOP_10_FEATURES = [
+    'Pedu', 'G2', 'paid', 'age', 'failures',
+    'studytime', 'G3', 'sex', 'G1', 'Dalc'
+]
+
+# =======================================================================
+# STEP 1: LOAD AND PREPARE DATA
+# =======================================================================
+
+df = pd.read_csv('/content/drive/MyDrive/Colab Notebooks/student-mat-clean.csv', sep=';')
+
+X = df[TOP_10_FEATURES]
+y = df['higher']
+
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y, test_size=0.2, random_state=RANDOM_STATE, stratify=y
+)
+
+# Scaling
+scaler = StandardScaler()
+X_train_scaled = scaler.fit_transform(X_train)
+X_test_scaled = scaler.transform(X_test)
+
+# Apply SMOTE to training data only
+smote = SMOTE(random_state=RANDOM_STATE)
+X_train_smote, y_train_smote = smote.fit_resample(X_train_scaled, y_train)
+
+print(f"--- STARTING TEST USING TOP 10 FEATURES ({len(TOP_10_FEATURES)} features) ---")
+print("Features used:", TOP_10_FEATURES)
+print("Sample count after SMOTE:")
+print(pd.Series(y_train_smote).value_counts().to_markdown())
+print("\n" + "="*80 + "\n")
+
+# =======================================================================
+# STEP 2: HYPERPARAMETER GRIDS
+# =======================================================================
+
+classifiers = {
+    "Logistic Regression": {
+        'model': LogisticRegression(random_state=RANDOM_STATE, max_iter=10000),
+        'params': {
+            'C': [0.1, 1.0, 10.0],
+            'solver': ['liblinear', 'lbfgs']
+        }
+    },
+    "MLP Classifier": {
+        'model': MLPClassifier(random_state=RANDOM_STATE, max_iter=500, early_stopping=True),
+        'params': {
+            'hidden_layer_sizes': [(10, 5), (10, 10), (15, 10)],
+            'alpha': [0.0001, 0.001, 0.01]
+        }
+    },
+    "SVM Classifier": {
+        'model': SVC(random_state=RANDOM_STATE),
+        'params': {
+            'C': [0.1, 1.0, 10.0],
+            'gamma': ['scale', 'auto', 0.1],
+            'kernel': ['linear', 'sigmoid', 'poly', 'rbf']
+        }
+    },
+    "Random Forest": {
+        'model': RandomForestClassifier(random_state=RANDOM_STATE),
+        'params': {
+            'n_estimators': [50, 100, 200],
+            'max_depth': [5, 10, None]
+        }
+    }
+}
+
+# =======================================================================
+# STEP 3: MODEL EVALUATION (TRAIN & TEST CONFUSION MATRICES)
+# =======================================================================
+
+def evaluate_best_model(name, grid_search, X_test, y_test):
+    """Evaluate model: confusion matrices (train/test) + metrics."""
+
+    best_model = grid_search.best_estimator_
+
+    # --------------------
+    # TEST PREDICTIONS
+    # --------------------
+    y_pred_test = best_model.predict(X_test)
+    report = classification_report(y_test, y_pred_test, output_dict=True)
+
+    # --------------------
+    # METRICS
+    # --------------------
+    model_metrics = {
+        'Model': name,
+        'Accuracy': accuracy_score(y_test, y_pred_test),
+        'Precision (0)': report['0']['precision'],
+        'Recall (0)': report['0']['recall'],
+        'F1-Score (0)': report['0']['f1-score'],
+        'Best Parameters': str(grid_search.best_params_)
+    }
+
+    # --------------------
+    # CONFUSION MATRICES
+    # --------------------
+    conf_test = confusion_matrix(y_test, y_pred_test)
+
+    y_pred_train = best_model.predict(X_train_smote)
+    conf_train = confusion_matrix(y_train_smote, y_pred_train)
+
+
+    # Visual comparison (TRAIN vs TEST)
+    fig, axes = plt.subplots(1, 2, figsize=(12, 5))
+
+    disp_train = ConfusionMatrixDisplay(conf_train)
+    disp_train.plot(cmap="Greens", values_format="d", ax=axes[0], colorbar=False)
+    axes[0].set_title(f"{name} – TRAIN (SMOTE)")
+
+    disp_test = ConfusionMatrixDisplay(conf_test)
+    disp_test.plot(cmap="Blues", values_format="d", ax=axes[1], colorbar=False)
+    axes[1].set_title(f"{name} – TEST")
+
+    fig.suptitle(f"Comparison of Confusion Matrices – {name}", fontsize=14)
+    plt.tight_layout()
+    plt.show()
+
+    # Classification report
+    report_df = pd.DataFrame(report).transpose()
+    print("\nClassification Report of the Best Model:")
+    print(report_df.to_markdown(floatfmt=".4f"))
+
+    return model_metrics
+
+# =======================================================================
+# STEP 4: GRID SEARCH OVER CLASSIFIERS
+# =======================================================================
+
+results = []
+
+for name, clf_data in classifiers.items():
+    print(f"--- STARTING GRID SEARCH: {name} ---")
+
+    grid_search = GridSearchCV(
+        estimator=clf_data['model'],
+        param_grid=clf_data['params'],
+        scoring=SCORER,
+        cv=5,
+        n_jobs=-1,
+        verbose=1
+    )
+
+    grid_search.fit(X_train_smote, y_train_smote)
+
+    print(f"Best parameters for {name}: {grid_search.best_params_}")
+
+    model_metrics = evaluate_best_model(name, grid_search, X_test_scaled, y_test)
+    results.append(model_metrics)
+
+    print("\n" + "="*80 + "\n")
+
+# =======================================================================
+# STEP 5: MODEL COMPARISON
+# =======================================================================
+
+comparison_df = pd.DataFrame(results).set_index('Model')
+comparison_df = comparison_df.sort_values(by='F1-Score (0)', ascending=False)
+
+print("\n\n#####################################################################################")
+print("### FINAL MODEL COMPARISON (Top 10 Features, SMOTE, Grid Search) ###")
+print("#####################################################################################")
+print(comparison_df.to_markdown(floatfmt=".4f"))
+
+# =======================================================================
+# STEP 6: SUMMARY BAR PLOT – F1 SCORE FOR CLASS 0
+# =======================================================================
+
+plt.figure(figsize=(10, 5))
+comparison_df['F1-Score (0)'].plot(kind='bar', color='skyblue', edgecolor='black')
+
+plt.title("Model Comparison – F1-Score for Class 0", fontsize=14)
+plt.ylabel("F1-Score (Class 0)")
+plt.ylim(0, 1)
+plt.grid(axis='y', linestyle='--', alpha=0.6)
+plt.xticks(rotation=45)
+
+plt.show()
