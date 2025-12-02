@@ -1,0 +1,24 @@
+# Count Yes/No values
+counts = data['higher'].value_counts()
+
+# Plot
+plt.figure(figsize=(6,4))
+bars = plt.bar(counts.index, counts.values)
+
+# Add count labels on each bar
+for bar in bars:
+    height = bar.get_height()
+    plt.text(
+        bar.get_x() + bar.get_width()/2,
+        height,
+        str(height),
+        ha='center',
+        va='bottom',
+        fontsize=12
+    )
+
+plt.xlabel('Higher Education (yes/no)')
+plt.ylabel('Count')
+plt.title('Histogram of Higher Education Decision for Math Dataset')
+plt.show()
+data.head()
