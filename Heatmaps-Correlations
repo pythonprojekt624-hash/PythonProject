@@ -1,0 +1,84 @@
+import pandas as pd
+import seaborn as sns
+import matplotlib.pyplot as plt
+
+# ----------------------------
+# 1. Load data
+# ----------------------------
+df = pd.read_csv('/content/drive/MyDrive/Colab Notebooks/student-mat-clean.csv', sep=';')
+
+# ----------------------------
+# 2. Compute correlations with target 'higher'
+# ----------------------------
+corr_with_target = df.corr(numeric_only=True)['higher'].abs().sort_values(ascending=False)
+
+# ----------------------------
+# 3. Select TOP 20 features (excluding target)
+# ----------------------------
+top20_features = corr_with_target.drop('higher').head(20).index.tolist()
+
+print("\nTOP 20 features correlated with 'higher':")
+print(top20_features)
+
+# ----------------------------
+# 4. Create a one-row heatmap: row = 'higher', columns = features
+# ----------------------------
+# Build DataFrame: 1 row ('higher') × many feature columns
+single_row_corr = df[top20_features + ['higher']].corr().loc[['higher'], top20_features]
+
+plt.figure(figsize=(16, 3))
+
+sns.heatmap(
+    single_row_corr,
+    annot=True,
+    cmap='coolwarm',
+    fmt=".2f",
+    linewidths=.5,
+    cbar_kws={"shrink": .8}
+)
+
+plt.title("Correlation of 'higher' With TOP 10 Features", fontsize=18)
+plt.ylabel("higher")
+plt.xlabel("features")
+plt.tight_layout()
+plt.show()
+import pandas as pd
+import seaborn as sns
+import matplotlib.pyplot as plt
+
+# --------------------------------
+# 1. Load data
+# --------------------------------
+df = pd.read_csv('/content/drive/MyDrive/Colab Notebooks/student-mat-clean.csv', sep=';')
+
+# --------------------------------
+# 2. Define top 10 features
+# --------------------------------
+TOP_10_FEATURES = [
+    'Pedu', 'G2', 'paid', 'age', 'failures',
+    'studytime', 'G3', 'sex', 'G1', 'romantic'
+]
+
+# --------------------------------
+# 3. Compute correlation matrix for these features
+# --------------------------------
+corr_matrix = df[TOP_10_FEATURES].corr()
+
+# --------------------------------
+# 4. Plot heatmap
+# --------------------------------
+plt.figure(figsize=(12, 10))
+
+sns.heatmap(
+    corr_matrix,
+    annot=True,
+    cmap='coolwarm',
+    fmt=".2f",
+    square=True,
+    linewidths=.5,
+    cbar_kws={"shrink": .8}
+)
+
+plt.title("Correlation Heatmap of TOP 10 Selected Features", fontsize=18)
+plt.tight_layout()
+plt.show()
