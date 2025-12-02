@@ -1,0 +1,207 @@
+# ==============================================================================
+# STEP 0: IMPORTS
+# ==============================================================================
+######################### WITHOUT SMOTE – SCALED
+import pandas as pd
+import numpy as np
+from sklearn.model_selection import train_test_split, GridSearchCV
+from sklearn.preprocessing import StandardScaler
+from sklearn.neural_network import MLPClassifier
+from sklearn.linear_model import LogisticRegression
+from sklearn.svm import SVC
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import (
+    classification_report, accuracy_score,
+    confusion_matrix, make_scorer, f1_score,
+    ConfusionMatrixDisplay
+)
+import matplotlib.pyplot as plt
+
+# ==============================================================================
+# SETTINGS
+# ==============================================================================
+
+RANDOM_STATE = 42
+SCORER = make_scorer(f1_score, pos_label=0)
+
+TOP_10_FEATURES = [
+    'Pedu', 'G2', 'paid', 'age', 'failures',
+    'studytime', 'G3', 'sex', 'G1', 'Dalc'
+]
+
+# ==============================================================================
+# STEP 1: LOAD AND PREPARE DATA
+# ==============================================================================
+
+df = pd.read_csv('/content/drive/MyDrive/Colab Notebooks/student-mat-clean.csv', sep=';')
+
+X = df[TOP_10_FEATURES]
+y = df['higher']
+
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y, test_size=0.2, random_state=RANDOM_STATE, stratify=y
+)
+
+# ==============================================================================
+# SCALING
+# ==============================================================================
+
+scaler = StandardScaler()
+X_train_scaled = scaler.fit_transform(X_train)
+X_test_scaled = scaler.transform(X_test)
+
+print(f"--- STARTING TEST USING REDUCED FEATURE SET ({len(TOP_10_FEATURES)} FEATURES) ---")
+print("Features used in the model:", TOP_10_FEATURES)
+print("Training size:", len(X_train))
+print("Test size:", len(X_test))
+print("\n" + "="*80 + "\n")
+
+# ==============================================================================
+# STEP 2: EXTENDED HYPERPARAMETER GRIDS
+# ==============================================================================
+
+classifiers = {
+    
+    "Logistic Regression": {
+        'model': LogisticRegression(random_state=RANDOM_STATE, max_iter=10000),
+        'params': {
+            'C': [0.01, 0.1, 1.0, 10.0, 50.0],
+            'solver': ['liblinear', 'lbfgs'],
+            'penalty': ['l2'],
+        }
+    },
+
+    "MLP Classifier": {
+        'model': MLPClassifier(random_state=RANDOM_STATE, max_iter=1000, early_stopping=True),
+        'params': {
+            'hidden_layer_sizes': [(8,), (16,), (32,), (16, 8), (32, 16)],
+            'activation': ['relu', 'tanh'],
+            'alpha': [0.0001, 0.001, 0.01],
+            'learning_rate': ['constant', 'adaptive']
+        }
+    },
+
+    "SVM Classifier": {
+        'model': SVC(random_state=RANDOM_STATE),
+        'params': {
+            'C': [0.1, 1, 10, 50, 100],
+            'gamma': ['scale', 'auto', 0.1, 0.01],
+            'kernel': ['linear', 'rbf', 'sigmoid', 'poly'],
+            'degree': [2, 3, 4]
+        }
+    },
+
+    "Random Forest": {
+        'model': RandomForestClassifier(random_state=RANDOM_STATE),
+        'params': {
+            'n_estimators': [50, 100, 200, 300],
+            'max_depth': [5, 10, 20, None],
+            'min_samples_split': [2, 5, 10],
+            'min_samples_leaf': [1, 2, 4]
+        }
+    }
+}
+
+# ==============================================================================
+# STEP 3: MODEL EVALUATION FUNCTION (TRAIN + TEST CONFUSION MATRICES)
+# ==============================================================================
+
+def evaluate_best_model(name, grid_search, X_train, y_train, X_test, y_test):
+    """Evaluate model: train & test confusion matrices + metrics."""
+
+    best_model = grid_search.best_estimator_
+
+    # ===================== TEST =====================
+    y_pred_test = best_model.predict(X_test)
+    report = classification_report(y_test, y_pred_test, output_dict=True)
+
+    conf_test = confusion_matrix(y_test, y_pred_test)
+
+    # ===================== TRAIN =====================
+    y_pred_train = best_model.predict(X_train)
+    conf_train = confusion_matrix(y_train, y_pred_train)
+
+    # ---------------- SIDE-BY-SIDE VISUALIZATION ----------------
+    fig, axes = plt.subplots(1, 2, figsize=(12, 5))
+
+    disp_train = ConfusionMatrixDisplay(conf_train)
+    disp_train.plot(cmap="Greens", values_format="d", ax=axes[0], colorbar=False)
+    axes[0].set_title(f"{name} – TRAIN")
+
+    disp_test = ConfusionMatrixDisplay(conf_test)
+    disp_test.plot(cmap="Blues", values_format="d", ax=axes[1], colorbar=False)
+    axes[1].set_title(f"{name} – TEST")
+
+    fig.suptitle(f"Comparison of Confusion Matrices – {name}", fontsize=14)
+    plt.tight_layout()
+    plt.show()
+
+    # ---------------- METRICS ----------------
+    return {
+        'Model': name,
+        'Accuracy': accuracy_score(y_test, y_pred_test),
+        'Precision (0)': report['0']['precision'],
+        'Recall (0)': report['0']['recall'],
+        'F1-Score (0)': report['0']['f1-score'],
+        'Best Parameters': str(grid_search.best_params_)
+    }
+
+
+# ==============================================================================
+# STEP 4: GRID SEARCH
+# ==============================================================================
+
+results = []
+
+for name, clf_data in classifiers.items():
+    print(f"\n===== STARTING HYPERPARAMETER TUNING: {name} =====")
+
+    grid_search = GridSearchCV(
+        estimator=clf_data['model'],
+        param_grid=clf_data['params'],
+        scoring=SCORER,
+        cv=5,
+        verbose=1,
+        n_jobs=-1
+    )
+
+    grid_search.fit(X_train_scaled, y_train)
+
+    print(f"Best parameters for {name}: {grid_search.best_params_}")
+
+    model_metrics = evaluate_best_model(
+        name, grid_search,
+        X_train_scaled, y_train,
+        X_test_scaled, y_test
+    )
+
+    results.append(model_metrics)
+
+    print("\n" + "="*80 + "\n")
+
+# ==============================================================================
+# STEP 5: SUMMARY OF RESULTS
+# ==============================================================================
+
+comparison_df = pd.DataFrame(results).set_index('Model')
+comparison_df = comparison_df.sort_values(by='F1-Score (0)', ascending=False)
+
+print("\n\n#####################################################################################")
+print("### FINAL MODEL COMPARISON (Top 10 Features, Scaling, No SMOTE) ###")
+print("#####################################################################################")
+print(comparison_df.to_markdown(floatfmt=".4f"))
+
+# ==============================================================================
+# STEP 6: SUMMARY PLOT
+# ==============================================================================
+
+plt.figure(figsize=(10, 5))
+comparison_df['F1-Score (0)'].plot(kind='bar', color='skyblue', edgecolor='black')
+
+plt.title("Model Comparison – F1-Score for Class 0", fontsize=14)
+plt.ylabel("F1-Score (class 0)")
+plt.ylim(0, 1)
+plt.grid(axis='y', linestyle='--', alpha=0.6)
+plt.xticks(rotation=45)
+
+plt.show()
